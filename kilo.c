@@ -90,9 +90,6 @@ void enableRawMode() {
   atexit(disableRawMode);
 
   struct termios raw = E.orig_termios;
-
-  tcgetattr(STDIN_FILENO, &raw);
-
   raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
   raw.c_oflag &= ~(OPOST);
   raw.c_cflag |= (CS8);
@@ -131,7 +128,7 @@ int editorReadKey() {
           }
         }
       } else {
-        switch(seq[1]) {
+        switch (seq[1]) {
           case 'A': return ARROW_UP;
           case 'B': return ARROW_DOWN;
           case 'C': return ARROW_RIGHT;
@@ -159,7 +156,7 @@ int getCursorPosition(int *rows, int *cols) {
 
   if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) return -1;
 
-  while (1 < sizeof(buf) - 1) {
+  while (i < sizeof(buf) - 1) {
     if (read(STDIN_FILENO, &buf[i], 1) != 1) break;
     if (buf[i] == 'R') break;
     i++;
@@ -220,10 +217,12 @@ void editorUpdateRow(erow *row) {
   row->rsize = idx;
 }
 
-void editorAppendRow(char *s, size_t len) {
-  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+void editorInsertRow(int at, char *s, size_t len) {
+  if (at < 0 || at > E.numrows) return;
 
-  int at = E.numrows;
+  E.row = realloc(E.row, sizeof(erow) * (E.numrows + 1));
+  memmove(&E.row[at + 1], &E.row[at], sizeof(erow) * (E.numrows - at));
+
   E.row[at].size = len;
   E.row[at].chars = malloc(len + 1);
   memcpy(E.row[at].chars, s, len);
@@ -281,10 +280,25 @@ void editorRowDelChar(erow *row, int at) {
 
 void editorInsertChar(int c) {
   if (E.cy == E.numrows) {
-    editorAppendRow("", 0);
+    editorInsertRow(E.numrows, "", 0);
   }
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
+}
+
+void editorInsertNewline() {
+  if (E.cx == 0) {
+    editorInsertRow(E.cy, "", 0);
+  } else {
+    erow *row = &E.row[E.cy];
+    editorInsertRow(E.cy + 1, &row->chars[E.cx], row->size - E.cx);
+    row = &E.row[E.cy];
+    row->size = E.cx;
+    row->chars[row->size] = '\0';
+    editorUpdateRow(row);
+  }
+  E.cy++;
+  E.cx = 0;
 }
 
 void editorDelChar() {
@@ -338,7 +352,7 @@ void editorOpen(char *filename) {
     while (linelen > 0 && (line[linelen - 1] == '\n' ||
                            line[linelen - 1] == 'r'))
       linelen--;
-    editorAppendRow(line, linelen);
+    editorInsertRow(E.numrows, line, linelen);
   }
   free(line);
   fclose(fp);
@@ -367,14 +381,6 @@ void editorSave() {
 
   free(buf);
   editorSetStatusMessage("Can't save! I/O error: %s", strerror(errno));
-}
-
-void editorSetStatusMessage(const char *fmt, ...) {
-  va_list ap;
-  va_start(ap, fmt);
-  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
-  va_end(ap);
-  E.statusmsg_time = time(NULL);
 }
 
 /*** input ***/
@@ -425,7 +431,7 @@ void editorProcessKeypress() {
 
   switch (c) {
     case '\r':
-      /* TODO */
+      editorInsertNewline();
       break;
 
     case CTRL_KEY('q'):
@@ -622,6 +628,14 @@ void editorRefreshScreen() {
 
   write(STDOUT_FILENO, ab.b, ab.len);
   abFree(&ab);
+}
+
+void editorSetStatusMessage(const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  vsnprintf(E.statusmsg, sizeof(E.statusmsg), fmt, ap);
+  va_end(ap);
+  E.statusmsg_time = time(NULL);
 }
 
 /*** init ***/
