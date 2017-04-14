@@ -986,7 +986,7 @@ void editorProcessKeypress() {
       break;
 
     case CTRL_KEY('s'):
-      editorSave();
+      editorFind();
       break;
 
     case HOME_KEY:
@@ -998,8 +998,8 @@ void editorProcessKeypress() {
         E.cx = E.row[E.cy].size;
       break;
 
-    case CTRL_KEY('f'):
-      editorFind();
+    case CTRL_KEY('w'):
+      editorSave();
       break;
 
     case BACKSPACE:
@@ -1074,7 +1074,7 @@ int main(int argc, char *argv[]) {
     editorOpen(argv[1]);
   }
 
-  editorSetStatusMessage("HELP: Ctrl-S = save | Ctrl-Q = quit | Ctrl-F = find");
+  editorSetStatusMessage("HELP: Ctrl-W = write | Ctrl-Q = quit | Ctrl-S = search");
 
   while (1) {
     editorRefreshScreen();
