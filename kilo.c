@@ -35,7 +35,8 @@ enum editorKey {
   HOME_KEY,
   END_KEY,
   PAGE_UP,
-  PAGE_DOWN
+  PAGE_DOWN,
+  TAB_KEY
 };
 
 enum editorHighlight {
@@ -198,6 +199,9 @@ int editorReadKey() {
 
     return '\x1b';
   } else {
+    if (c == '\t') {
+      return TAB_KEY;
+    }
     return c;
   }
 }
@@ -518,6 +522,18 @@ void editorInsertChar(int c) {
   }
   editorRowInsertChar(&E.row[E.cy], E.cx, c);
   E.cx++;
+}
+
+void editorInsertTab() {
+  if (E.cy == E.numrows) {
+    editorInsertRow(E.numrows, "", 0);
+  }
+  erow *row = &E.row[E.cy];
+
+  int spaces;
+  spaces = (KILO_TAB_STOP) - (E.cx % KILO_TAB_STOP);
+  for (; spaces > 0; spaces--)
+   editorRowInsertChar(row, E.cx++, ' ');
 }
 
 void editorInsertNewline() {
@@ -1015,6 +1031,9 @@ void editorProcessKeypress() {
     case ARROW_RIGHT:
       editorMoveCursor(c);
       break;
+
+    case TAB_KEY:
+      editorInsertTab();
 
     case CTRL_KEY('l'):
     case '\x1b':
