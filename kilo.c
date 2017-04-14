@@ -90,6 +90,7 @@ struct editorConfig {
   time_t statusmsg_time;
   struct editorSyntax *syntax;
   struct termios orig_termios;
+  int softtabs;
 };
 
 struct editorConfig E;
@@ -530,10 +531,14 @@ void editorInsertTab() {
   }
   erow *row = &E.row[E.cy];
 
-  int spaces;
-  spaces = (KILO_TAB_STOP) - (E.cx % KILO_TAB_STOP);
-  for (; spaces > 0; spaces--)
-   editorRowInsertChar(row, E.cx++, ' ');
+  if (E.softtabs) {
+    int spaces;
+    spaces = (KILO_TAB_STOP) - (E.cx % KILO_TAB_STOP);
+    for (; spaces > 0; spaces--)
+     editorRowInsertChar(row, E.cx++, ' ');
+  } else {
+     editorRowInsertChar(row, E.cx++, '\t');
+  }
 }
 
 void editorInsertNewline() {
@@ -1062,6 +1067,7 @@ void initEditor() {
   E.statusmsg[0] = '\0';
   E.statusmsg_time = 0;
   E.syntax = NULL;
+  E.softtabs = 1;
 
   if (getWindowSize(&E.screenrows, &E.screencols) == -1) die("getWindowSize");
   E.screenrows -= 2;
