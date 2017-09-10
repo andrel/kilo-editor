@@ -118,6 +118,15 @@ struct editorSyntax HLDB[] = {
 
 #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 
+
+/*** UTF-8 characters ***/
+
+static inline int is_beginning_utf8(unsigned char c)
+{
+	return (c & 0xc0) != 0x80;
+}
+
+
 /*** prototypes ***/
 
 void editorSetStatusMessage(const char *fmt, ...);
@@ -412,7 +421,9 @@ int editorRowCxToRx(erow *row, int cx) {
   for (j = 0; j < cx; j++) {
     if (row->chars[j] == '\t')
       rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
-    rx++;
+    if (is_beginning_utf8(row->chars[j])) {
+      rx++;
+    }
   }
   return rx;
 }
@@ -425,7 +436,9 @@ int editorRowRxToCx(erow *row, int rx) {
   for (cx = 0; cx < row->size; cx++) {
     if (row->chars[cx] == '\t')
       cur_rx += (KILO_TAB_STOP - 1) - (cur_rx % KILO_TAB_STOP);
-    cur_rx++;
+    if (is_beginning_utf8(row->chars[cx])) {
+      cur_rx++;
+    }
 
     if (cur_rx > rx) return cx;
   }
