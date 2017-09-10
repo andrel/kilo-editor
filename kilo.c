@@ -960,13 +960,27 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
   }
 }
 
+// Move one character. Skip UTF8 continuation bytes
+void moveOneLeft(erow *row) {
+  do {
+    E.cx--;
+  } while (!is_beginning_utf8(row->chars[E.cx]));
+}
+
+// Move one character. Skip UTF8 continuation bytes
+void moveOneRight(erow *row) {
+  do {
+    E.cx++;
+  } while (!is_beginning_utf8(row->chars[E.cx]));
+}
+
 void editorMoveCursor(int key) {
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
 
   switch(key) {
   case ARROW_LEFT:
     if (E.cx != 0) {
-      E.cx--;
+      moveOneLeft(row);
     } else if (E.cy > 0) {
       E.cy--;
       E.cx = E.row[E.cy].size;
@@ -974,7 +988,7 @@ void editorMoveCursor(int key) {
     break;
   case ARROW_RIGHT:
     if (row && E.cx < row->size) {
-      E.cx++;
+      moveOneRight(row);
     } else if (row && E.cx == row->size) {
       E.cy++;
       E.cx = 0;
