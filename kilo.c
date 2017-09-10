@@ -166,14 +166,14 @@ void enableRawMode() {
 // Read a key (or escape sequence), return the key or value that was read.
 int editorReadKey() {
   int nread;
-  char c;
+  unsigned char c;
   while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
     if (nread == -1 && errno != EAGAIN) die("read");
   }
 
   // 0x1b is escape character. An escape sequence?
   if (c == '\x1b') {
-    char seq[3];
+    unsigned char seq[3];
 
     // Attempt to read an escape sequence
     if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
@@ -212,6 +212,13 @@ int editorReadKey() {
     }
 
     return '\x1b';
+  } else if (c >= 0xc0) {
+    // c > 127
+    // Two byte UTF-8? Read one more byte.
+    unsigned char d;
+    if (read(STDIN_FILENO, &d, 1) != 1) return c;
+    unsigned int e = (c << 8) + d;
+    return e;
   } else {
     if (c == '\t') {
       return TAB_KEY;
@@ -537,12 +544,22 @@ void editorRowDelChar(erow *row, int at) {
 
 /*** editor operations ***/
 
-void editorInsertChar(int c) {
+void editorInsertChar(unsigned int c) {
   if (E.cy == E.numrows) {
     editorInsertRow(E.numrows, "", 0);
   }
-  editorRowInsertChar(&E.row[E.cy], E.cx, c);
-  E.cx++;
+  if (c > 0xc0) {
+    // UTF-8 character
+    char a = c;
+    char b = (c >> 8);
+    editorRowInsertChar(&E.row[E.cy], E.cx, b);
+    E.cx++;
+    editorRowInsertChar(&E.row[E.cy], E.cx, a);
+    E.cx++;
+  } else {
+    editorRowInsertChar(&E.row[E.cy], E.cx, c);
+    E.cx++;
+  }
 }
 
 void editorInsertTab() {
@@ -1019,7 +1036,7 @@ void editorMoveCursor(int key) {
 void editorProcessKeypress() {
   static int quit_times = KILO_QUIT_TIMES;
 
-  int c = editorReadKey();
+  unsigned int c = editorReadKey();
 
   switch (c) {
     case '\r':
