@@ -2,4 +2,11 @@
 * Move forward/backward by words?
 * Emacs keybindings for save/exit?
 * æøå (multibyte) flytter cursor 2x posisjoner frem.
+  For å finne lengden på en UTF8-streng:
+
+  `int len = 0;
+   while (*s) len += (*s++ & 0xc0) != 0x80;
+  `
+
+  Forklaring: https://stackoverflow.com/questions/3911536/utf-8-unicode-whats-with-0xc0-and-0x80
 * Select area
