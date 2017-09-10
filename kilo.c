@@ -118,6 +118,15 @@ struct editorSyntax HLDB[] = {
 
 #define HLDB_ENTRIES (sizeof(HLDB) / sizeof(HLDB[0]))
 
+
+/*** UTF-8 characters ***/
+
+static inline int is_beginning_utf8(unsigned char c)
+{
+	return (c & 0xc0) != 0x80;
+}
+
+
 /*** prototypes ***/
 
 void editorSetStatusMessage(const char *fmt, ...);
@@ -154,16 +163,19 @@ void enableRawMode() {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
+// Read a key (or escape sequence), return the key or value that was read.
 int editorReadKey() {
   int nread;
-  char c;
+  unsigned char c;
   while ((nread = read(STDIN_FILENO, &c, 1)) != 1) {
     if (nread == -1 && errno != EAGAIN) die("read");
   }
 
+  // 0x1b is escape character. An escape sequence?
   if (c == '\x1b') {
-    char seq[3];
+    unsigned char seq[3];
 
+    // Attempt to read an escape sequence
     if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
     if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
 
@@ -171,6 +183,7 @@ int editorReadKey() {
       if (seq[1] >= '0' && seq[1] <= '9') {
         if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
         if (seq[2] == '~') {
+          // Sequence: ESC [ num ~
           switch (seq[1]) {
             case '1': return HOME_KEY;
             case '3': return DEL_KEY;
@@ -199,6 +212,13 @@ int editorReadKey() {
     }
 
     return '\x1b';
+  } else if (c >= 0xc0) {
+    // c > 127
+    // Two byte UTF-8? Read one more byte.
+    unsigned char d;
+    if (read(STDIN_FILENO, &d, 1) != 1) return c;
+    unsigned int e = (c << 8) + d;
+    return e;
   } else {
     if (c == '\t') {
       return TAB_KEY;
@@ -401,24 +421,31 @@ void editorSelectSyntaxHighlight() {
 
 /*** row operations ***/
 
+// Konverter en character-posisjon til en render-posisjon.
 int editorRowCxToRx(erow *row, int cx) {
   int rx = 0;
   int j;
   for (j = 0; j < cx; j++) {
     if (row->chars[j] == '\t')
       rx += (KILO_TAB_STOP - 1) - (rx % KILO_TAB_STOP);
-    rx++;
+    if (is_beginning_utf8(row->chars[j])) {
+      rx++;
+    }
   }
   return rx;
 }
 
+// Konverter en render-posisjon til en character-posisjon
+// Dvs: rx øker med 8 dersom cx peker på en TAB.i
 int editorRowRxToCx(erow *row, int rx) {
   int cur_rx = 0;
   int cx;
   for (cx = 0; cx < row->size; cx++) {
     if (row->chars[cx] == '\t')
       cur_rx += (KILO_TAB_STOP - 1) - (cur_rx % KILO_TAB_STOP);
-    cur_rx++;
+    if (is_beginning_utf8(row->chars[cx])) {
+      cur_rx++;
+    }
 
     if (cur_rx > rx) return cx;
   }
@@ -428,7 +455,7 @@ int editorRowRxToCx(erow *row, int rx) {
 void editorUpdateRow(erow *row) {
   int tabs = 0;
   int j;
-  for (j = 0; j < row->size; j++)
+  for (j = 0; j < row->size; j++) // Count number of tabs
     if (row->chars[j] == '\t') tabs++;
 
   free(row->render);
@@ -517,12 +544,22 @@ void editorRowDelChar(erow *row, int at) {
 
 /*** editor operations ***/
 
-void editorInsertChar(int c) {
+void editorInsertChar(unsigned int c) {
   if (E.cy == E.numrows) {
     editorInsertRow(E.numrows, "", 0);
   }
-  editorRowInsertChar(&E.row[E.cy], E.cx, c);
-  E.cx++;
+  if (c > 0xc0) {
+    // UTF-8 character
+    char a = c;
+    char b = (c >> 8);
+    editorRowInsertChar(&E.row[E.cy], E.cx, b);
+    E.cx++;
+    editorRowInsertChar(&E.row[E.cy], E.cx, a);
+    E.cx++;
+  } else {
+    editorRowInsertChar(&E.row[E.cy], E.cx, c);
+    E.cx++;
+  }
 }
 
 void editorInsertTab() {
@@ -562,6 +599,10 @@ void editorDelChar() {
 
   erow *row = &E.row[E.cy];
   if (E.cx > 0) {
+    while (!is_beginning_utf8(row->chars[E.cx - 1]) && E.cx > 0) {
+      editorRowDelChar(row, E.cx - 1);
+      E.cx--;
+    }
     editorRowDelChar(row, E.cx - 1);
     E.cx--;
   } else {
@@ -871,6 +912,7 @@ void editorRefreshScreen() {
   editorDrawMessageBar(&ab);
 
   char buf[32];
+  // Print cursor.
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
                                             (E.rx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
@@ -904,23 +946,33 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
 
     int c = editorReadKey();
     if (c == DEL_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
+      // Handle backspace/delete.
       if (buflen != 0) buf[buflen--] = '\0';
     } else if (c == '\x1b') {
+      // 0x1b is Escape key
       editorSetStatusMessage("");
       if (callback) callback(buf, c);
+      // Release buffer
       free(buf);
+      // Abort (return NULL)
       return NULL;
     } else if (c == '\r') {
+      // Enter/newline
       if (buflen != 0) {
         editorSetStatusMessage("");
         if (callback) callback(buf, c);
+        // Return whatever were typed into buffer.
         return buf;
       }
     } else if (!iscntrl(c) && c < 128) {
+      // ASCII character, but not a control character
       if (buflen == bufsize - 1) {
+        // If we have reached the end of buffer,
         bufsize *= 2;
+        // Reallocate more memory
         buf = realloc(buf, bufsize);
       }
+      // Insert character, increase buflen, terminate string.
       buf[buflen++] = c;
       buf[buflen] = '\0';
     }
@@ -929,13 +981,27 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
   }
 }
 
+// Move one character. Skip UTF8 continuation bytes
+void moveOneLeft(erow *row) {
+  do {
+    E.cx--;
+  } while (!is_beginning_utf8(row->chars[E.cx]));
+}
+
+// Move one character. Skip UTF8 continuation bytes
+void moveOneRight(erow *row) {
+  do {
+    E.cx++;
+  } while (!is_beginning_utf8(row->chars[E.cx]));
+}
+
 void editorMoveCursor(int key) {
   erow *row = (E.cy >= E.numrows) ? NULL : &E.row[E.cy];
 
   switch(key) {
   case ARROW_LEFT:
     if (E.cx != 0) {
-      E.cx--;
+      moveOneLeft(row);
     } else if (E.cy > 0) {
       E.cy--;
       E.cx = E.row[E.cy].size;
@@ -943,7 +1009,7 @@ void editorMoveCursor(int key) {
     break;
   case ARROW_RIGHT:
     if (row && E.cx < row->size) {
-      E.cx++;
+      moveOneRight(row);
     } else if (row && E.cx == row->size) {
       E.cy++;
       E.cx = 0;
@@ -968,10 +1034,13 @@ void editorMoveCursor(int key) {
   }
 }
 
+
+
+// Read a key (call editorReadKey) and handle keypress event.
 void editorProcessKeypress() {
   static int quit_times = KILO_QUIT_TIMES;
 
-  int c = editorReadKey();
+  unsigned int c = editorReadKey();
 
   switch (c) {
     case '\r':
@@ -985,7 +1054,7 @@ void editorProcessKeypress() {
         quit_times--;
         return;
       }
-      write(STDOUT_FILENO, "\x1b[2J", 4);
+      write(STDOUT_FILENO, "\x1b[2J", 4); // Clear screen
       write(STDOUT_FILENO, "\x1b[H", 3);
       exit(0);
       break;

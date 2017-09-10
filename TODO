@@ -1,5 +1,4 @@
 * Softtabs: backspace should delete backwards to next KILO_TAB_STOP.
 * Move forward/backward by words?
 * Emacs keybindings for save/exit?
-* æøå (multibyte) flytter cursor 2x posisjoner frem.
 * Select area
