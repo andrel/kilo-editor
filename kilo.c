@@ -154,6 +154,7 @@ void enableRawMode() {
   if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) die("tcsetattr");
 }
 
+// Read a key (or escape sequence), return the key or value that was read.
 int editorReadKey() {
   int nread;
   char c;
@@ -161,9 +162,11 @@ int editorReadKey() {
     if (nread == -1 && errno != EAGAIN) die("read");
   }
 
+  // 0x1b is escape character. An escape sequence?
   if (c == '\x1b') {
     char seq[3];
 
+    // Attempt to read an escape sequence
     if (read(STDIN_FILENO, &seq[0], 1) != 1) return '\x1b';
     if (read(STDIN_FILENO, &seq[1], 1) != 1) return '\x1b';
 
@@ -171,6 +174,7 @@ int editorReadKey() {
       if (seq[1] >= '0' && seq[1] <= '9') {
         if (read(STDIN_FILENO, &seq[2], 1) != 1) return '\x1b';
         if (seq[2] == '~') {
+          // Sequence: ESC [ num ~
           switch (seq[1]) {
             case '1': return HOME_KEY;
             case '3': return DEL_KEY;
@@ -401,6 +405,7 @@ void editorSelectSyntaxHighlight() {
 
 /*** row operations ***/
 
+// Konverter en character-posisjon til en render-posisjon.
 int editorRowCxToRx(erow *row, int cx) {
   int rx = 0;
   int j;
@@ -412,6 +417,8 @@ int editorRowCxToRx(erow *row, int cx) {
   return rx;
 }
 
+// Konverter en render-posisjon til en character-posisjon
+// Dvs: rx øker med 8 dersom cx peker på en TAB.i
 int editorRowRxToCx(erow *row, int rx) {
   int cur_rx = 0;
   int cx;
@@ -428,7 +435,7 @@ int editorRowRxToCx(erow *row, int rx) {
 void editorUpdateRow(erow *row) {
   int tabs = 0;
   int j;
-  for (j = 0; j < row->size; j++)
+  for (j = 0; j < row->size; j++) // Count number of tabs
     if (row->chars[j] == '\t') tabs++;
 
   free(row->render);
@@ -871,6 +878,7 @@ void editorRefreshScreen() {
   editorDrawMessageBar(&ab);
 
   char buf[32];
+  // Print cursor.
   snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cy - E.rowoff) + 1,
                                             (E.rx - E.coloff) + 1);
   abAppend(&ab, buf, strlen(buf));
@@ -904,23 +912,33 @@ char *editorPrompt(char *prompt, void (*callback)(char *, int)) {
 
     int c = editorReadKey();
     if (c == DEL_KEY || c == CTRL_KEY('h') || c == BACKSPACE) {
+      // Handle backspace/delete.
       if (buflen != 0) buf[buflen--] = '\0';
     } else if (c == '\x1b') {
+      // 0x1b is Escape key
       editorSetStatusMessage("");
       if (callback) callback(buf, c);
+      // Release buffer
       free(buf);
+      // Abort (return NULL)
       return NULL;
     } else if (c == '\r') {
+      // Enter/newline
       if (buflen != 0) {
         editorSetStatusMessage("");
         if (callback) callback(buf, c);
+        // Return whatever were typed into buffer.
         return buf;
       }
     } else if (!iscntrl(c) && c < 128) {
+      // ASCII character, but not a control character
       if (buflen == bufsize - 1) {
+        // If we have reached the end of buffer,
         bufsize *= 2;
+        // Reallocate more memory
         buf = realloc(buf, bufsize);
       }
+      // Insert character, increase buflen, terminate string.
       buf[buflen++] = c;
       buf[buflen] = '\0';
     }
@@ -968,6 +986,9 @@ void editorMoveCursor(int key) {
   }
 }
 
+
+
+// Read a key (call editorReadKey) and handle keypress event.
 void editorProcessKeypress() {
   static int quit_times = KILO_QUIT_TIMES;
 
@@ -985,7 +1006,7 @@ void editorProcessKeypress() {
         quit_times--;
         return;
       }
-      write(STDOUT_FILENO, "\x1b[2J", 4);
+      write(STDOUT_FILENO, "\x1b[2J", 4); // Clear screen
       write(STDOUT_FILENO, "\x1b[H", 3);
       exit(0);
       break;
