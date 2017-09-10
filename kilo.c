@@ -599,6 +599,10 @@ void editorDelChar() {
 
   erow *row = &E.row[E.cy];
   if (E.cx > 0) {
+    while (!is_beginning_utf8(row->chars[E.cx - 1]) && E.cx > 0) {
+      editorRowDelChar(row, E.cx - 1);
+      E.cx--;
+    }
     editorRowDelChar(row, E.cx - 1);
     E.cx--;
   } else {
