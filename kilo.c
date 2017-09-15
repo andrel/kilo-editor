@@ -1076,10 +1076,11 @@ void editorProcessKeypress() {
       editorSave();
       break;
 
+    case CTRL_KEY('d'):
+    case DEL_KEY:
+      editorMoveCursor(ARROW_RIGHT);
     case BACKSPACE:
     case CTRL_KEY('h'):
-    case DEL_KEY:
-      if (c == DEL_KEY) editorMoveCursor(ARROW_RIGHT);
       editorDelChar();
       break;
 
